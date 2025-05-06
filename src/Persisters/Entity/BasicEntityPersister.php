@@ -36,7 +36,9 @@ use Doctrine\ORM\Utility\LockSqlHelper;
 use Doctrine\ORM\Utility\PersisterHelper;
 use LengthException;
 
+use function array_chunk;
 use function array_combine;
+use function array_fill;
 use function array_keys;
 use function array_map;
 use function array_merge;
@@ -260,6 +262,12 @@ class BasicEntityPersister implements EntityPersister
         return $this->queuedInserts;
     }
 
+    /** @return positive-int */
+    protected function getMaxBatchedInserts(): int
+    {
+        return 1;
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -273,22 +281,32 @@ class BasicEntityPersister implements EntityPersister
         $idGenerator    = $this->class->idGenerator;
         $isPostInsertId = $idGenerator->isPostInsertGenerator();
 
-        $stmt      = $this->conn->prepare($this->getInsertSQL());
         $tableName = $this->class->getTableName();
 
-            foreach ($this->queuedInserts as $key => $entity) {
+        $stmt      = null;
+        $stmtCount = null;
+
+        foreach (array_chunk($this->queuedInserts, $this->getMaxBatchedInserts(), true) as $entitiesChunk) {
+            if ($stmt === null || $stmtCount !== count($entitiesChunk)) {
+                $stmt      = $this->conn->prepare($this->getInsertSQL(count($entitiesChunk)));
+                $stmtCount = count($entitiesChunk);
+            }
+
+            $paramIndex = 1;
+
+            foreach ($entitiesChunk as $entity) {
                 $insertData = $this->prepareInsertData($entity);
 
                 if (isset($insertData[$tableName])) {
-                    $paramIndex = 1;
-
                     foreach ($insertData[$tableName] as $column => $value) {
                         $stmt->bindValue($paramIndex++, $value, $this->columnTypes[$column]);
                     }
                 }
+            }
 
             $stmt->executeStatement();
 
+            foreach ($entitiesChunk as $key => $entity) {
                 if ($isPostInsertId) {
                     $generatedId = $idGenerator->generateId($this->em, $entity);
                     $id          = [$this->class->identifier[0] => $generatedId];
@@ -311,6 +329,7 @@ class BasicEntityPersister implements EntityPersister
                 // were given to our addInsert() method.
                 unset($this->queuedInserts[$key]);
             }
+        }
     }
 
     /**
@@ -1491,7 +1510,7 @@ class BasicEntityPersister implements EntityPersister
     /**
      * {@inheritDoc}
      */
-    public function getInsertSQL()
+    public function getInsertSQL(int $recordsCount = 1)
     {
         $columns   = $this->getInsertColumnList();
         $tableName = $this->quoteStrategy->getTableName($this->class, $this->platform);
@@ -1523,7 +1542,7 @@ class BasicEntityPersister implements EntityPersister
         $columns      = implode(', ', $columns);
         $placeholders = implode(', ', $placeholders);
 
-        return sprintf('INSERT INTO %s (%s) VALUES (%s)', $tableName, $columns, $placeholders);
+        return sprintf('INSERT INTO %s (%s) VALUES %s', $tableName, $columns, implode(', ', array_fill(0, $recordsCount, '(' . $placeholders . ')')));
     }
 
     /**
