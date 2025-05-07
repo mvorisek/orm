@@ -264,11 +264,11 @@ class ManyToManyBasicAssociationTest extends OrmFunctionalTestCase
         $this->getQueryLog()->reset()->enable();
         $this->_em->flush();
 
-        // This takes 5 * 2 queries – for each group to be removed, one to remove all join table rows
+        // This takes 5 * 2 deletes – for each group to be removed, one to remove all join table rows
         // for the CmsGroup -> CmsUser inverse side association (for both users at once),
         // and one for the group itself.
         $this->removeTransactionCommandsFromQueryLog();
-        self::assertQueryCount(10);
+        self::assertQueryCount($this->isSecondLevelCacheEnabled ? 10 : 6);
 
         // Changes to in-memory collection have been made and flushed
         self::assertCount(0, $user->getGroups());
