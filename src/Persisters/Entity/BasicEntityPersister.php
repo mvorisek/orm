@@ -276,6 +276,12 @@ class BasicEntityPersister implements EntityPersister
         return 50;
     }
 
+    /** @return positive-int */
+    protected function getMaxBatchedDeletes(): int
+    {
+        return 200;
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -652,19 +658,29 @@ class BasicEntityPersister implements EntityPersister
      */
     public function deleteMulti(array $entities)
     {
-        $entity = reset($entities);
-
         $class     = $this->class;
         $tableName = $this->quoteStrategy->getTableName($class, $this->platform);
         $idColumns = $this->quoteStrategy->getIdentifierColumnNames($class, $this->platform);
         $types     = $this->getClassIdentifiersTypes($class);
 
-        $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
-        $id         = array_combine($idColumns, $identifier);
+        $deletedRows = 0;
 
-        $this->deleteJoinTableRecords($identifier, $types);
+        foreach (array_chunk($entities, $this->getMaxBatchedDeletes()) as $entitiesChunk) {
+            $ids = [];
 
-        return $this->connDeleteMulti($tableName, [$id], $types);
+            foreach ($entitiesChunk as $entity) {
+                $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
+                $id         = array_combine($idColumns, $identifier);
+
+                $this->deleteJoinTableRecords($identifier, $types);
+
+                $ids[] = $id;
+            }
+
+            $deletedRows += $this->connDeleteMulti($tableName, $ids, $types);
+        }
+
+        return $deletedRows;
     }
 
     /**

@@ -125,7 +125,7 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
         $this->_em->remove($c2);
         $this->_em->flush();
 
-        self::assertQueryCountByType('DELETE', 2);
+        self::assertQueryCountByType('DELETE', $cacheUsage === 0 ? 1 : 2);
     }
 
     /**
