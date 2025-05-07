@@ -9,8 +9,11 @@ use Doctrine\ORM\Mapping as ORM;
 use Doctrine\Tests\OrmFunctionalTestCase;
 
 use function array_filter;
+use function array_map;
+use function array_sum;
 use function array_values;
 use function strpos;
+use function substr_count;
 
 class GH10913Test extends OrmFunctionalTestCase
 {
@@ -39,7 +42,7 @@ class GH10913Test extends OrmFunctionalTestCase
         $this->_em->remove($b);
         $this->_em->remove($c);
 
-        $this->flushAndAssertNumberOfDeleteQueries(3);
+        $this->flushAndAssertNumberOfDeletes(3, $this->isSecondLevelCacheEnabled ? 3 : 2);
     }
 
     public function testExample2(): void
@@ -59,7 +62,7 @@ class GH10913Test extends OrmFunctionalTestCase
         $this->_em->remove($b);
         $this->_em->remove($c);
 
-        $this->flushAndAssertNumberOfDeleteQueries(3);
+        $this->flushAndAssertNumberOfDeletes(3, 3);
     }
 
     public function testExample3(): void
@@ -105,10 +108,10 @@ class GH10913Test extends OrmFunctionalTestCase
         $this->_em->remove($d);
         $this->_em->remove($a);
 
-        $this->flushAndAssertNumberOfDeleteQueries(4);
+        $this->flushAndAssertNumberOfDeletes(4, $this->isSecondLevelCacheEnabled ? 4 : 3);
     }
 
-    private function flushAndAssertNumberOfDeleteQueries(int $expectedCount): void
+    private function flushAndAssertNumberOfDeletes(int $expectedRowsCount, int $expectedQueriesCount): void
     {
         $queryLog = $this->getQueryLog();
         $queryLog->reset()->enable();
@@ -119,7 +122,12 @@ class GH10913Test extends OrmFunctionalTestCase
             return strpos($entry['sql'], 'DELETE') === 0;
         }));
 
-        self::assertCount($expectedCount, $queries);
+        $deletedRows = array_sum(array_map(static function ($query) {
+            return 1 + substr_count($query['sql'], ' OR ');
+        }, $queries));
+
+        self::assertSame($expectedRowsCount, $deletedRows);
+        self::assertCount($expectedQueriesCount, $queries);
     }
 
     /**
