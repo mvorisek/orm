@@ -8,6 +8,7 @@ use BackedEnum;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\Expr\Comparison;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\InvalidArgumentException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Result;
@@ -677,9 +678,38 @@ class BasicEntityPersister implements EntityPersister
      */
     protected function connDeleteMulti(string $table, array $ids, array $types)
     {
-        $id = reset($ids);
+        $wheres = $values = [];
 
-        return (int) $this->conn->delete($table, $id, $types);
+        foreach ($ids as $id) {
+            if (count($id) === 0) {
+                throw InvalidArgumentException::fromEmptyCriteria();
+            }
+
+            $conditions = [];
+
+            foreach ($id as $columnName => $value) {
+                if ($value === null) {
+                    throw new InvalidArgumentException('ID value for delete cannot be null');
+                }
+
+                $values[]     = $value;
+                $conditions[] = $columnName . ' = ?';
+            }
+
+            $where = implode(' AND ', $conditions);
+
+            if (count($conditions) > 1 && count($id) > 1) {
+                $where = '(' . $where . ')';
+            }
+
+            $wheres[] = $where;
+        }
+
+        return (int) $this->conn->executeStatement(
+            'DELETE FROM ' . $table . ' WHERE ' . implode(' OR ', $wheres),
+            $values,
+            $types
+        );
     }
 
     /**
