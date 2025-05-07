@@ -641,16 +641,7 @@ class BasicEntityPersister implements EntityPersister
      */
     public function delete($entity)
     {
-        $class      = $this->class;
-        $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
-        $tableName  = $this->quoteStrategy->getTableName($class, $this->platform);
-        $idColumns  = $this->quoteStrategy->getIdentifierColumnNames($class, $this->platform);
-        $id         = array_combine($idColumns, $identifier);
-        $types      = $this->getClassIdentifiersTypes($class);
-
-        $this->deleteJoinTableRecords($identifier, $types);
-
-        return (bool) $this->conn->delete($tableName, $id, $types);
+        return $this->deleteMulti([$entity]) === 1;
     }
 
     /**
@@ -660,13 +651,35 @@ class BasicEntityPersister implements EntityPersister
      */
     public function deleteMulti(array $entities)
     {
-        $deletedRows = 0;
+        $entity = reset($entities);
 
-        foreach ($entities as $entity) {
-            $deletedRows += $this->delete($entity);
-        }
+        $class     = $this->class;
+        $tableName = $this->quoteStrategy->getTableName($class, $this->platform);
+        $idColumns = $this->quoteStrategy->getIdentifierColumnNames($class, $this->platform);
+        $types     = $this->getClassIdentifiersTypes($class);
 
-        return $deletedRows;
+        $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
+        $id         = array_combine($idColumns, $identifier);
+
+        $this->deleteJoinTableRecords($identifier, $types);
+
+        return $this->connDeleteMulti($tableName, [$id], $types);
+    }
+
+    /**
+     * Based on https://github.com/doctrine/dbal/blob/3.9.4/src/Connection.php#L693
+     *
+     * @param string                               $table Table name
+     * @param non-empty-list<array<string, mixed>> $ids   Deletion identifiers
+     * @param list<string>                         $types Identifier types
+     *
+     * @return int The number of affected rows.
+     */
+    protected function connDeleteMulti(string $table, array $ids, array $types)
+    {
+        $id = reset($ids);
+
+        return (int) $this->conn->delete($table, $id, $types);
     }
 
     /**
