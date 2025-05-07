@@ -265,7 +265,14 @@ class BasicEntityPersister implements EntityPersister
     /** @return positive-int */
     protected function getMaxBatchedInserts(): int
     {
-        return 1;
+        $idGenerator    = $this->class->idGenerator;
+        $isPostInsertId = $idGenerator->isPostInsertGenerator();
+
+        if ($isPostInsertId) {
+            return 1;
+        }
+
+        return 50;
     }
 
     /**

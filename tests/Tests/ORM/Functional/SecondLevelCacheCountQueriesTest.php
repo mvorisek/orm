@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Doctrine\Tests\ORM\Functional;
 
+use Doctrine\ORM\Id\AssignedGenerator;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
 use Doctrine\Tests\Models\Cache\Country;
@@ -62,6 +63,24 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
         $metadata->enableCache(['usage' => $cacheUsage]);
     }
 
+    private function loadFixturesCountriesNonGeneratedId(): void
+    {
+        $metadata = $this->_em->getClassMetaData(Country::class);
+        $metadata->setIdGenerator(new AssignedGenerator());
+
+        $c1 = new Country('Brazil');
+        $c1->setId(10);
+        $c2 = new Country('Germany');
+        $c2->setId(20);
+
+        $this->countries[] = $c1;
+        $this->countries[] = $c2;
+
+        $this->_em->persist($c1);
+        $this->_em->persist($c2);
+        $this->_em->flush();
+    }
+
     /** @param 'INSERT'|'UPDATE'|'DELETE' $type */
     private function assertQueryCountByType(string $type, int $expectedCount): void
     {
@@ -83,10 +102,10 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
 
         self::assertQueryCountByType('INSERT', 0);
 
-        $this->loadFixturesCountries();
+        $this->loadFixturesCountriesNonGeneratedId();
 
         self::assertCount(2, $this->countries);
-        self::assertQueryCountByType('INSERT', 2);
+        self::assertQueryCountByType('INSERT', 1);
     }
 
     /**
@@ -97,7 +116,7 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
     public function testDelete(int $cacheUsage): void
     {
         $this->setupCountryModel($cacheUsage);
-        $this->loadFixturesCountries();
+        $this->loadFixturesCountriesNonGeneratedId();
 
         $c1 = $this->_em->find(Country::class, $this->countries[0]->getId());
         $c2 = $this->_em->find(Country::class, $this->countries[1]->getId());
@@ -117,7 +136,7 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
     public function testUpdate(int $cacheUsage): void
     {
         $this->setupCountryModel($cacheUsage);
-        $this->loadFixturesCountries();
+        $this->loadFixturesCountriesNonGeneratedId();
 
         $c1 = $this->_em->find(Country::class, $this->countries[0]->getId());
         $c2 = $this->_em->find(Country::class, $this->countries[1]->getId());
