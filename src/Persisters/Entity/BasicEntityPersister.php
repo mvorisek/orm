@@ -281,12 +281,13 @@ class BasicEntityPersister implements EntityPersister
         $idGenerator    = $this->class->idGenerator;
         $isPostInsertId = $idGenerator->isPostInsertGenerator();
 
-        $tableName = $this->class->getTableName();
+        $columnsEmpty = $this->getInsertColumnList() === [];
+        $tableName    = $this->class->getTableName();
 
         $stmt      = null;
         $stmtCount = null;
 
-        foreach (array_chunk($this->queuedInserts, $this->getMaxBatchedInserts(), true) as $entitiesChunk) {
+        foreach (array_chunk($this->queuedInserts, $columnsEmpty ? 1 : $this->getMaxBatchedInserts(), true) as $entitiesChunk) {
             if ($stmt === null || $stmtCount !== count($entitiesChunk)) {
                 $stmt      = $this->conn->prepare($this->getInsertSQL(count($entitiesChunk)));
                 $stmtCount = count($entitiesChunk);
@@ -297,7 +298,7 @@ class BasicEntityPersister implements EntityPersister
             foreach ($entitiesChunk as $entity) {
                 $insertData = $this->prepareInsertData($entity);
 
-                if (isset($insertData[$tableName])) {
+                if (! $columnsEmpty) {
                     foreach ($insertData[$tableName] as $column => $value) {
                         $stmt->bindValue($paramIndex++, $value, $this->columnTypes[$column]);
                     }
