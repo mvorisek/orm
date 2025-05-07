@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Doctrine\Tests\ORM\Internal;
 
+use Closure;
 use Doctrine\ORM\Internal\TopologicalSort;
 use Doctrine\ORM\Internal\TopologicalSort\CycleDetectedException;
 use Doctrine\Tests\OrmTestCase;
@@ -11,6 +12,7 @@ use Doctrine\Tests\OrmTestCase;
 use function array_map;
 use function array_search;
 use function array_values;
+use function substr;
 
 class TopologicalSortTest extends OrmTestCase
 {
@@ -153,6 +155,28 @@ class TopologicalSortTest extends OrmTestCase
         self::assertSame(['A', 'B', 'C'], $this->computeResult());
     }
 
+    public function testForGroupingSimple(): void
+    {
+        $this->addNodes('A1', 'A2', 'A3', 'B1', 'B2', 'B3');
+        $this->addEdge('B1', 'A1');
+        $this->addEdge('B2', 'A2');
+        $this->addEdge('B3', 'A3');
+        self::assertSame(['A1', 'A2', 'A3', 'B1', 'B2', 'B3'], $this->computeResultForGrouping(static function ($n) {
+            return substr($n, 0, 1);
+        }));
+    }
+
+    public function testForGroupingSimpleReversed(): void
+    {
+        $this->addNodes('B1', 'B2', 'B3', 'A1', 'A2', 'A3');
+        $this->addEdge('B3', 'A3');
+        $this->addEdge('B2', 'A2');
+        $this->addEdge('B1', 'A1');
+        self::assertSame(['A1', 'A2', 'A3', 'B1', 'B2', 'B3'], $this->computeResultForGrouping(static function ($n) {
+            return substr($n, 0, 1);
+        }));
+    }
+
     public function testNodesReturnedInDepthFirstOrder(): void
     {
         $this->addNodes('A', 'B', 'C');
@@ -285,5 +309,19 @@ class TopologicalSortTest extends OrmTestCase
         return array_map(static function (Node $n): string {
             return $n->name;
         }, array_values($this->topologicalSort->sort()));
+    }
+
+    /**
+     * @param Closure(string): string $mapToName
+     *
+     * @return list<string>
+     */
+    private function computeResultForGrouping(Closure $mapToName): array
+    {
+        return array_map(static function (Node $n): string {
+            return $n->name;
+        }, array_values($this->topologicalSort->sortForGrouping(static function (Node $n) use ($mapToName) {
+            return $mapToName($n->name);
+        })));
     }
 }

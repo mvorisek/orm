@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Doctrine\ORM\Internal;
 
+use Closure;
 use Doctrine\ORM\Internal\TopologicalSort\CycleDetectedException;
 
 use function array_keys;
+use function array_map;
+use function array_unique;
 use function spl_object_id;
 
 /**
@@ -103,6 +106,42 @@ final class TopologicalSort
                 $this->visit($oid);
             }
         }
+
+        return $this->sortResult;
+    }
+
+    /**
+     * Returns a topological sort of all nodes and group nodes with the same name together when possible.
+     *
+     * @param Closure(object): string $mapToName
+     *
+     * @return list<object>
+     */
+    public function sortForGrouping(Closure $mapToName): array
+    {
+        $presorted       = (clone $this)->sort();
+        $presortedMapped = array_map(static function ($node) use ($mapToName): string {
+            return $mapToName($node);
+        }, $presorted);
+
+        $nextGroupNodeByName   = [];
+        $presortedMappedUnique = array_unique($presortedMapped);
+        $prevName              = false;
+        foreach ($presortedMappedUnique as $i => $name) {
+            if ($prevName !== false) {
+                $nextGroupNodeByName[$prevName] = $presorted[$i];
+            }
+
+            $prevName = $name;
+        }
+
+        foreach ($presortedMapped as $i => $name) {
+            if ($name !== $prevName) {
+                $this->addEdge($nextGroupNodeByName[$name], $presorted[$i], true);
+            }
+        }
+
+        $this->sort();
 
         return $this->sortResult;
     }
