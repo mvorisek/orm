@@ -449,30 +449,44 @@ class BasicEntityPersister implements EntityPersister
      */
     public function updateMulti(array $entities)
     {
-        $entity = reset($entities);
+        $tableName       = $this->class->getTableName();
+        $isVersioned     = $this->class->isVersioned;
+        $quotedTableName = $this->quoteStrategy->getTableName($this->class, $this->platform);
 
-        $tableName  = $this->class->getTableName();
+        $entitiesToUpdate = [];
+        $datas            = [];
+
+        foreach ($entities as $entity) {
             $updateData = $this->prepareUpdateData($entity);
 
             if (! isset($updateData[$tableName])) {
-                return;
+                continue;
             }
 
             $data = $updateData[$tableName];
 
             if (! $data) {
-                return;
+                continue;
             }
 
-            $isVersioned     = $this->class->isVersioned;
-            $quotedTableName = $this->quoteStrategy->getTableName($this->class, $this->platform);
+            $entitiesToUpdate[] = $entity;
+            $datas[]            = $data;
+        }
 
-        $this->updateTable($entity, $quotedTableName, $data, $isVersioned);
+        if ($entitiesToUpdate === []) {
+            return;
+        }
+
+        foreach ($entitiesToUpdate as $k => $entity) {
+            $this->updateTable($entity, $quotedTableName, $datas[$k], $isVersioned);
+        }
 
         if ($this->class->requiresFetchAfterChange) {
+            foreach ($entitiesToUpdate as $entity) {
                 $id = $this->class->getIdentifierValues($entity);
 
                 $this->assignDefaultVersionAndUpsertableValues($entity, $id);
+            }
         }
     }
 
