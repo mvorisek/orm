@@ -523,8 +523,8 @@ class BasicEntityPersister implements EntityPersister
         array $updateDatas,
         $versioned = false
     ): void {
-        $entity     = reset($entities);
-        $updateData = reset($updateDatas);
+        foreach ($entities as $key => $entity) {
+            $updateData = $updateDatas[$key];
 
             $set    = [];
             $types  = [];
@@ -556,6 +556,7 @@ class BasicEntityPersister implements EntityPersister
                 $set[]    = $column . ' = ' . $placeholder;
                 $types[]  = $this->columnTypes[$columnName];
             }
+        }
 
             $where      = [];
             $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
