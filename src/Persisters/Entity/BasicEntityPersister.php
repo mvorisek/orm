@@ -452,27 +452,27 @@ class BasicEntityPersister implements EntityPersister
         $entity = reset($entities);
 
         $tableName  = $this->class->getTableName();
-        $updateData = $this->prepareUpdateData($entity);
+            $updateData = $this->prepareUpdateData($entity);
 
-        if (! isset($updateData[$tableName])) {
-            return;
-        }
+            if (! isset($updateData[$tableName])) {
+                return;
+            }
 
-        $data = $updateData[$tableName];
+            $data = $updateData[$tableName];
 
-        if (! $data) {
-            return;
-        }
+            if (! $data) {
+                return;
+            }
 
-        $isVersioned     = $this->class->isVersioned;
-        $quotedTableName = $this->quoteStrategy->getTableName($this->class, $this->platform);
+            $isVersioned     = $this->class->isVersioned;
+            $quotedTableName = $this->quoteStrategy->getTableName($this->class, $this->platform);
 
         $this->updateTable($entity, $quotedTableName, $data, $isVersioned);
 
         if ($this->class->requiresFetchAfterChange) {
-            $id = $this->class->getIdentifierValues($entity);
+                $id = $this->class->getIdentifierValues($entity);
 
-            $this->assignDefaultVersionAndUpsertableValues($entity, $id);
+                $this->assignDefaultVersionAndUpsertableValues($entity, $id);
         }
     }
 
