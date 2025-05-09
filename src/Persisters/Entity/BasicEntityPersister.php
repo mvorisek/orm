@@ -439,6 +439,18 @@ class BasicEntityPersister implements EntityPersister
      */
     public function update($entity)
     {
+        $this->updateMulti([$entity]);
+    }
+
+    /**
+     * @param non-empty-list<object> $entities The entities to update.
+     *
+     * @return void
+     */
+    public function updateMulti(array $entities)
+    {
+        $entity = reset($entities);
+
         $tableName  = $this->class->getTableName();
         $updateData = $this->prepareUpdateData($entity);
 
@@ -465,18 +477,6 @@ class BasicEntityPersister implements EntityPersister
     }
 
     /**
-     * @param non-empty-list<object> $entities The entities to update.
-     *
-     * @return void
-     */
-    public function updateMulti(array $entities)
-    {
-        foreach ($entities as $entity) {
-            $this->update($entity);
-        }
-    }
-
-    /**
      * Performs an UPDATE statement for an entity on a specific table.
      * The UPDATE can optionally be versioned, which requires the entity to have a version field.
      *
@@ -494,6 +494,24 @@ class BasicEntityPersister implements EntityPersister
         array $updateData,
         $versioned = false
     ): void {
+        $this->updateTableMulti([$entity], $quotedTableName, [$updateData], $versioned);
+    }
+
+    /**
+     * @param non-empty-list<object>  $entities        The entities to update.
+     * @param string                  $quotedTableName The quoted name of the table to apply the UPDATE on.
+     * @param non-empty-list<mixed[]> $updateDatas     Array of map of columns to update (column => value).
+     * @param bool                    $versioned       Whether the UPDATE should be versioned.
+     */
+    final protected function updateTableMulti(
+        array $entities,
+        $quotedTableName,
+        array $updateDatas,
+        $versioned = false
+    ): void {
+        $entity     = reset($entities);
+        $updateData = reset($updateDatas);
+
         $set    = [];
         $types  = [];
         $params = [];
