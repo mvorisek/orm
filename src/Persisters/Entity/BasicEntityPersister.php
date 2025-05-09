@@ -526,88 +526,88 @@ class BasicEntityPersister implements EntityPersister
         $entity     = reset($entities);
         $updateData = reset($updateDatas);
 
-        $set    = [];
-        $types  = [];
-        $params = [];
+            $set    = [];
+            $types  = [];
+            $params = [];
 
-        foreach ($updateData as $columnName => $value) {
-            $placeholder = '?';
-            $column      = $columnName;
+            foreach ($updateData as $columnName => $value) {
+                $placeholder = '?';
+                $column      = $columnName;
 
-            switch (true) {
-                case isset($this->class->fieldNames[$columnName]):
-                    $fieldName = $this->class->fieldNames[$columnName];
-                    $column    = $this->quoteStrategy->getColumnName($fieldName, $this->class, $this->platform);
+                switch (true) {
+                    case isset($this->class->fieldNames[$columnName]):
+                        $fieldName = $this->class->fieldNames[$columnName];
+                        $column    = $this->quoteStrategy->getColumnName($fieldName, $this->class, $this->platform);
 
-                    if (isset($this->class->fieldMappings[$fieldName]['requireSQLConversion'])) {
-                        $type        = Type::getType($this->columnTypes[$columnName]);
-                        $placeholder = $type->convertToDatabaseValueSQL('?', $this->platform);
-                    }
+                        if (isset($this->class->fieldMappings[$fieldName]['requireSQLConversion'])) {
+                            $type        = Type::getType($this->columnTypes[$columnName]);
+                            $placeholder = $type->convertToDatabaseValueSQL('?', $this->platform);
+                        }
 
-                    break;
+                        break;
 
-                case isset($this->quotedColumns[$columnName]):
-                    $column = $this->quotedColumns[$columnName];
+                    case isset($this->quotedColumns[$columnName]):
+                        $column = $this->quotedColumns[$columnName];
 
-                    break;
+                        break;
+                }
+
+                $params[] = $value;
+                $set[]    = $column . ' = ' . $placeholder;
+                $types[]  = $this->columnTypes[$columnName];
             }
 
-            $params[] = $value;
-            $set[]    = $column . ' = ' . $placeholder;
-            $types[]  = $this->columnTypes[$columnName];
-        }
+            $where      = [];
+            $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
 
-        $where      = [];
-        $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
+            foreach ($this->class->identifier as $idField) {
+                if (! isset($this->class->associationMappings[$idField])) {
+                    $params[] = $identifier[$idField];
+                    $types[]  = $this->class->fieldMappings[$idField]['type'];
+                    $where[]  = $this->quoteStrategy->getColumnName($idField, $this->class, $this->platform);
 
-        foreach ($this->class->identifier as $idField) {
-            if (! isset($this->class->associationMappings[$idField])) {
+                    continue;
+                }
+
                 $params[] = $identifier[$idField];
-                $types[]  = $this->class->fieldMappings[$idField]['type'];
-                $where[]  = $this->quoteStrategy->getColumnName($idField, $this->class, $this->platform);
+                $where[]  = $this->quoteStrategy->getJoinColumnName(
+                    $this->class->associationMappings[$idField]['joinColumns'][0],
+                    $this->class,
+                    $this->platform
+                );
 
-                continue;
+                $targetMapping = $this->em->getClassMetadata($this->class->associationMappings[$idField]['targetEntity']);
+                $targetType    = PersisterHelper::getTypeOfField($targetMapping->identifier[0], $targetMapping, $this->em);
+
+                if ($targetType === []) {
+                    throw UnrecognizedField::byFullyQualifiedName($this->class->name, $targetMapping->identifier[0]);
+                }
+
+                $types[] = reset($targetType);
             }
 
-            $params[] = $identifier[$idField];
-            $where[]  = $this->quoteStrategy->getJoinColumnName(
-                $this->class->associationMappings[$idField]['joinColumns'][0],
-                $this->class,
-                $this->platform
-            );
+            if ($versioned) {
+                $versionField = $this->class->versionField;
+                assert($versionField !== null);
+                $versionFieldType = $this->class->fieldMappings[$versionField]['type'];
+                $versionColumn    = $this->quoteStrategy->getColumnName($versionField, $this->class, $this->platform);
 
-            $targetMapping = $this->em->getClassMetadata($this->class->associationMappings[$idField]['targetEntity']);
-            $targetType    = PersisterHelper::getTypeOfField($targetMapping->identifier[0], $targetMapping, $this->em);
+                $where[]  = $versionColumn;
+                $types[]  = $this->class->fieldMappings[$versionField]['type'];
+                $params[] = $this->class->reflFields[$versionField]->getValue($entity);
 
-            if ($targetType === []) {
-                throw UnrecognizedField::byFullyQualifiedName($this->class->name, $targetMapping->identifier[0]);
+                switch ($versionFieldType) {
+                    case Types::SMALLINT:
+                    case Types::INTEGER:
+                    case Types::BIGINT:
+                        $set[] = $versionColumn . ' = ' . $versionColumn . ' + 1';
+                        break;
+
+                    case Types::DATETIME_MUTABLE:
+                        $set[] = $versionColumn . ' = CURRENT_TIMESTAMP';
+                        break;
+                }
             }
-
-            $types[] = reset($targetType);
-        }
-
-        if ($versioned) {
-            $versionField = $this->class->versionField;
-            assert($versionField !== null);
-            $versionFieldType = $this->class->fieldMappings[$versionField]['type'];
-            $versionColumn    = $this->quoteStrategy->getColumnName($versionField, $this->class, $this->platform);
-
-            $where[]  = $versionColumn;
-            $types[]  = $this->class->fieldMappings[$versionField]['type'];
-            $params[] = $this->class->reflFields[$versionField]->getValue($entity);
-
-            switch ($versionFieldType) {
-                case Types::SMALLINT:
-                case Types::INTEGER:
-                case Types::BIGINT:
-                    $set[] = $versionColumn . ' = ' . $versionColumn . ' + 1';
-                    break;
-
-                case Types::DATETIME_MUTABLE:
-                    $set[] = $versionColumn . ' = CURRENT_TIMESTAMP';
-                    break;
-            }
-        }
 
         $sql = 'UPDATE ' . $quotedTableName
              . ' SET ' . implode(', ', $set)
