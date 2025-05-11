@@ -40,10 +40,12 @@ use LengthException;
 use function array_chunk;
 use function array_combine;
 use function array_fill;
+use function array_key_exists;
 use function array_keys;
 use function array_map;
 use function array_merge;
 use function array_search;
+use function array_slice;
 use function array_unique;
 use function array_values;
 use function assert;
@@ -523,6 +525,15 @@ class BasicEntityPersister implements EntityPersister
         array $updateDatas,
         $versioned = false
     ): void {
+        $setMulti         = [];
+        $setTypesMulti    = [];
+        $setParamsMulti   = [];
+        $whereMulti       = [];
+        $whereTypesMulti  = [];
+        $whereParamsMulti = [];
+
+        $versionColumn = false;
+
         foreach ($entities as $key => $entity) {
             $updateData = $updateDatas[$key];
 
@@ -552,11 +563,10 @@ class BasicEntityPersister implements EntityPersister
                         break;
                 }
 
-                $params[] = $value;
-                $set[]    = $column . ' = ' . $placeholder;
-                $types[]  = $this->columnTypes[$columnName];
+                $params[$column] = $value;
+                $set[$column]    = $placeholder;
+                $types[$column]  = $this->columnTypes[$columnName];
             }
-        }
 
             $where      = [];
             $identifier = $this->em->getUnitOfWork()->getEntityIdentifier($entity);
@@ -601,23 +611,90 @@ class BasicEntityPersister implements EntityPersister
                     case Types::SMALLINT:
                     case Types::INTEGER:
                     case Types::BIGINT:
-                        $set[] = $versionColumn . ' = ' . $versionColumn . ' + 1';
+                        $set[$versionColumn] = $versionColumn . ' + 1';
                         break;
 
                     case Types::DATETIME_MUTABLE:
-                        $set[] = $versionColumn . ' = CURRENT_TIMESTAMP';
+                        $set[$versionColumn] = 'CURRENT_TIMESTAMP';
                         break;
                 }
             }
 
-        $sql = 'UPDATE ' . $quotedTableName
-             . ' SET ' . implode(', ', $set)
-             . ' WHERE ' . implode(' = ? AND ', $where) . ' = ?';
+            $setMulti[]         = $set;
+            $setTypesMulti[]    = array_slice($types, 0, count($set) - ($versioned ? 1 : 0));
+            $setParamsMulti[]   = array_slice($params, 0, count($set) - ($versioned ? 1 : 0));
+            $whereMulti[]       = $where;
+            $whereTypesMulti[]  = array_slice($types, count($set) - ($versioned ? 1 : 0));
+            $whereParamsMulti[] = array_slice($params, count($set) - ($versioned ? 1 : 0));
+        }
+
+        $uniqueSetColumns = array_unique(array_merge(...array_map(static function ($set) {
+            return array_keys($set);
+        }, $setMulti)));
+
+        $sql    = 'UPDATE ' . $quotedTableName . ' SET' . "\n";
+        $types  = [];
+        $params = [];
+
+        $renderWhere = static function ($multiKey, $forceParentheses) use ($whereMulti, $whereTypesMulti, $whereParamsMulti, &$types, &$params) {
+            foreach ($whereTypesMulti[$multiKey] as $v) {
+                $types[] = $v;
+            }
+
+            foreach ($whereParamsMulti[$multiKey] as $v) {
+                $params[] = $v;
+            }
+
+            if (count($whereMulti[$multiKey]) > 1) {
+                $forceParentheses = true;
+            }
+
+            return ($forceParentheses ? '(' : '')
+                . implode(' = ? AND ', $whereMulti[$multiKey]) . ' = ?'
+                . ($forceParentheses ? ')' : '');
+        };
+
+        $isFirst = true;
+        foreach ($uniqueSetColumns as $column) {
+            if ($isFirst) {
+                $isFirst = false;
+            } else {
+                $sql .= ',' . "\n";
+            }
+
+            $sql .= $column . ' = CASE' . "\n";
+            foreach ($setMulti as $multiK => $set) {
+                if (! array_key_exists($column, $set)) {
+                    continue;
+                }
+
+                $sql .= '  WHEN ' . $renderWhere($multiK, false) . ' THEN ' . $set[$column] . "\n";
+                if (! $versioned || $column !== $versionColumn) { // version column is not bound variable
+                    $types[]  = $setTypesMulti[$multiK][$column];
+                    $params[] = $setParamsMulti[$multiK][$column];
+                }
+            }
+
+            $sql .= '  ELSE ' . $column . "\n";
+            $sql .= 'END';
+        }
+
+        $sql    .= "\n" . 'WHERE' . "\n";
+        $isFirst = true;
+        foreach ($setMulti as $multiK => $set) {
+            if ($isFirst) {
+                $isFirst = false;
+            } else {
+                $sql .= "\n" . 'OR ';
+            }
+
+            $sql .= $renderWhere($multiK, count($setMulti) > 1);
+        }
 
         $result = $this->conn->executeStatement($sql, $params, $types);
 
-        if ($versioned && ! $result) {
-            throw OptimisticLockException::lockFailed($entity);
+        if ($versioned && $result !== count($entities)) {
+            throw OptimisticLockException::lockFailed(reset($entities));
         }
     }
 

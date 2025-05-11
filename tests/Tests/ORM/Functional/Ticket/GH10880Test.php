@@ -46,7 +46,13 @@ class GH10880Test extends OrmFunctionalTestCase
 
         self::assertCount(1, $queryLog->queries);
         $query = reset($queryLog->queries);
-        self::assertSame('UPDATE GH10880BaseProcess SET description = ? WHERE id = ?', $query['sql']);
+        self::assertSame('UPDATE GH10880BaseProcess SET
+description = CASE
+  WHEN id = ? THEN ?
+  ELSE description
+END
+WHERE
+id = ?', $query['sql']);
     }
 
     private function removeTransactionCommandsFromQueryLog(): void
