@@ -479,9 +479,9 @@ class BasicEntityPersister implements EntityPersister
             return;
         }
 
-        foreach ($entitiesToUpdate as $k => $entity) {
-            $this->updateTable($entity, $quotedTableName, $datas[$k], $isVersioned);
-        }
+        assert($datas !== []);
+
+        $this->updateTableMulti($entitiesToUpdate, $quotedTableName, $datas, $isVersioned);
 
         if ($this->class->requiresFetchAfterChange) {
             foreach ($entitiesToUpdate as $entity) {
