@@ -609,12 +609,19 @@ class UnitOfWork implements PropertyChangedListener
      */
     private function executeExtraUpdates(): void
     {
+        $entities = [];
+
         foreach ($this->extraUpdates as $oid => $update) {
             [$entity, $changeset] = $update;
-            $persister            = $this->getEntityPersister(get_class($entity));
 
+            $entities[]                   = $entity;
             $this->entityChangeSets[$oid] = $changeset;
-            $this->persisterUpdateMulti($persister, [$entity]);
+        }
+
+        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation($entities) as $entitiesGroup) {
+            $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
+
+            $this->persisterUpdateMulti($persister, $entitiesGroup);
         }
 
         $this->extraUpdates = [];
@@ -1169,6 +1176,16 @@ class UnitOfWork implements PropertyChangedListener
     }
 
     /**
+     * @param list<object> $entities
+     *
+     * @return list<non-empty-list<object>>
+     */
+    private function groupConsecutiveByPersisterAndAnyAssociation(array $entities): array
+    {
+        return array_chunk($entities, 1);
+    }
+
+    /**
      * Executes entity insertions
      */
     private function executeInserts(): void
@@ -1176,14 +1193,16 @@ class UnitOfWork implements PropertyChangedListener
         $entities         = $this->computeInsertExecutionOrder();
         $eventsToDispatch = [];
 
-            foreach ($entities as $entity) {
-                $oid       = spl_object_id($entity);
-                $class     = $this->em->getClassMetadata(get_class($entity));
-            $persister = $this->getEntityPersister($class->name);
+        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation($entities) as $entitiesGroup) {
+            $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
+
+            foreach ($entitiesGroup as $entity) {
+                $oid = spl_object_id($entity);
 
                 $persister->addInsert($entity);
 
                 unset($this->entityInsertions[$oid]);
+            }
 
             $postInsertIds = $persister->executeInserts();
 
@@ -1200,6 +1219,10 @@ class UnitOfWork implements PropertyChangedListener
                 }
             }
 
+            foreach ($entitiesGroup as $entity) {
+                $oid   = spl_object_id($entity);
+                $class = $this->em->getClassMetadata(get_class($entity));
+
                 if (! isset($this->entityIdentifiers[$oid])) {
                     //entity was not added to identity map because some identifiers are foreign keys to new entities.
                     //add it now
@@ -1212,6 +1235,7 @@ class UnitOfWork implements PropertyChangedListener
                     $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
                 }
             }
+        }
 
         // Defer dispatching `postPersist` events to until all entities have been inserted and post-insert
         // IDs have been assigned.
@@ -1302,21 +1326,33 @@ class UnitOfWork implements PropertyChangedListener
      */
     private function executeUpdates(): void
     {
-            foreach ($this->entityUpdates as $oid => $entity) {
-                $class            = $this->em->getClassMetadata(get_class($entity));
-            $persister        = $this->getEntityPersister($class->name);
-                $preUpdateInvoke  = $this->listenersInvoker->getSubscribedSystems($class, Events::preUpdate);
-                $postUpdateInvoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postUpdate);
+        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation(array_values($this->entityUpdates)) as $entitiesGroup) {
+            $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
+
+            foreach ($entitiesGroup as $entity) {
+                $oid             = spl_object_id($entity);
+                $class           = $this->em->getClassMetadata(get_class($entity));
+                $preUpdateInvoke = $this->listenersInvoker->getSubscribedSystems($class, Events::preUpdate);
 
                 if ($preUpdateInvoke !== ListenersInvoker::INVOKE_NONE) {
                     $this->listenersInvoker->invoke($class, Events::preUpdate, $entity, new PreUpdateEventArgs($entity, $this->em, $this->getEntityChangeSet($entity)), $preUpdateInvoke);
 
                     $this->recomputeSingleEntityChangeSet($class, $entity);
                 }
-
-            if (! empty($this->entityChangeSets[$oid])) {
-                $this->persisterUpdateMulti($persister, [$entity]);
             }
+
+            $entitiesGroupToUpdate = array_values(array_filter($entitiesGroup, function ($entity) {
+                $oid = spl_object_id($entity);
+
+                return ! empty($this->entityChangeSets[$oid]);
+            }));
+
+            $this->persisterUpdateMulti($persister, $entitiesGroupToUpdate);
+
+            foreach ($entitiesGroup as $entity) {
+                $oid              = spl_object_id($entity);
+                $class            = $this->em->getClassMetadata(get_class($entity));
+                $postUpdateInvoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postUpdate);
 
                 unset($this->entityUpdates[$oid]);
 
@@ -1324,6 +1360,7 @@ class UnitOfWork implements PropertyChangedListener
                     $this->listenersInvoker->invoke($class, Events::postUpdate, $entity, new PostUpdateEventArgs($entity, $this->em), $postUpdateInvoke);
                 }
             }
+        }
     }
 
     /**
@@ -1334,15 +1371,19 @@ class UnitOfWork implements PropertyChangedListener
         $entities         = $this->computeDeleteExecutionOrder();
         $eventsToDispatch = [];
 
-            foreach ($entities as $entity) {
+        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation($entities) as $entitiesGroup) {
+            $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
+
+            foreach ($entitiesGroup as $entity) {
                 $this->removeFromIdentityMap($entity);
+            }
 
-                $oid       = spl_object_id($entity);
-                $class     = $this->em->getClassMetadata(get_class($entity));
-                $persister = $this->getEntityPersister($class->name);
-                $invoke    = $this->listenersInvoker->getSubscribedSystems($class, Events::postRemove);
+            $this->persisterDeleteMulti($persister, $entitiesGroup);
 
-            $this->persisterDeleteMulti($persister, [$entity]);
+            foreach ($entitiesGroup as $entity) {
+                $oid    = spl_object_id($entity);
+                $class  = $this->em->getClassMetadata(get_class($entity));
+                $invoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postRemove);
 
                 unset(
                     $this->entityDeletions[$oid],
@@ -1362,6 +1403,7 @@ class UnitOfWork implements PropertyChangedListener
                     $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
                 }
             }
+        }
 
         // Defer dispatching `postRemove` events to until all entities have been removed.
         foreach ($eventsToDispatch as $event) {
@@ -3585,6 +3627,14 @@ EXCEPTION
         $this->persisters[$entityName] = $persister;
 
         return $this->persisters[$entityName];
+    }
+
+    /** @param object $entity */
+    private function getEntityPersisterByEntity($entity): EntityPersister
+    {
+        $class = $this->em->getClassMetadata(get_class($entity));
+
+        return $this->getEntityPersister($class->name);
     }
 
     /**
