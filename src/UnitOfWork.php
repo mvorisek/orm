@@ -618,6 +618,8 @@ class UnitOfWork implements PropertyChangedListener
             $this->entityChangeSets[$oid] = $changeset;
         }
 
+        $entities = $this->optimizeUpdateOrderForGrouping($entities);
+
         foreach ($this->groupConsecutiveByPersisterAndAnyAssociation($entities) as $entitiesGroup) {
             $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
 
@@ -1425,7 +1427,9 @@ class UnitOfWork implements PropertyChangedListener
      */
     private function executeUpdates(): void
     {
-        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation(array_values($this->entityUpdates)) as $entitiesGroup) {
+        $entities = $this->optimizeUpdateOrderForGrouping(array_values($this->entityUpdates));
+
+        foreach ($this->groupConsecutiveByPersisterAndAnyAssociation($entities) as $entitiesGroup) {
             $persister = $this->getEntityPersisterByEntity(reset($entitiesGroup));
 
             foreach ($entitiesGroup as $entity) {
@@ -1695,6 +1699,24 @@ class UnitOfWork implements PropertyChangedListener
                 }
             }
         }
+
+        return $this->sortForGroupingByEntityPersister($sort);
+    }
+
+    /**
+     * @param list<object> $entities
+     *
+     * @return list<object>
+     */
+    private function optimizeUpdateOrderForGrouping(array $entities): array
+    {
+        $sort = new TopologicalSort();
+
+        foreach ($entities as $entity) {
+            $sort->addNode($entity);
+        }
+
+        // Updates do not need to follow a particular order
 
         return $this->sortForGroupingByEntityPersister($sort);
     }

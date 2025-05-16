@@ -53,6 +53,7 @@ use function gc_collect_cycles;
 use function get_class;
 use function method_exists;
 use function random_int;
+use function substr;
 use function uniqid;
 
 /**
@@ -1181,6 +1182,76 @@ class UnitOfWorkTest extends OrmTestCase
             ['A', 'B', 'C'],
             ['X', 'Y'],
         ], $deleteGroups);
+    }
+
+    /** @group #8260 */
+    public function testExtraUpdateGrouping(): void
+    {
+        $persisterMock = $this->getMockBuilder(BasicEntityPersister::class)
+            ->setConstructorArgs([$this->_emMock, $this->_emMock->getClassMetadata(ForumUser::class)])
+            ->getMock();
+        $this->_unitOfWork->setEntityPersister(Country::class, $persisterMock);
+        $this->_unitOfWork->setEntityPersister(City::class, $persisterMock);
+
+        $entities = [];
+
+        $countryX = new Country(1, 'X');
+        $this->_unitOfWork->persist($countryX);
+        $entities[] = $countryX;
+
+        $cityA          = new City(1, 'A');
+        $cityA->country = $countryX;
+        $this->_unitOfWork->persist($cityA);
+        $entities[] = $cityA;
+
+        $cityB          = new City(2, 'B');
+        $cityB->country = $countryX;
+        $this->_unitOfWork->persist($cityB);
+        $entities[] = $cityB;
+
+        $countryY = new Country(2, 'Y');
+        $this->_unitOfWork->persist($countryY);
+        $entities[] = $countryY;
+
+        $cityC          = new City(3, 'C');
+        $cityC->country = $countryY;
+        $this->_unitOfWork->persist($cityC);
+        $entities[] = $cityC;
+
+        $persisterMock->expects(self::any())
+            ->method('executeInserts')
+            ->willReturnCallback(function () use ($entities) {
+                foreach ($entities as $entity) {
+                    if (substr($entity->name, 0, 5) !== 'extra') {
+                        $origName     = $entity->name;
+                        $entity->name = 'extra' . $origName;
+                        $this->_unitOfWork->scheduleExtraUpdate($entity, ['name' => [$origName, $entity->name]]);
+                    }
+                }
+
+                return null;
+            });
+
+        $updateGroups = [];
+
+        $persisterMock->expects(self::any())
+            ->method('updateMulti')
+            ->willReturnCallback(static function ($entities) use (&$updateGroups) {
+                $updateGroups[] = array_map(static function ($entity) {
+                    assert($entity instanceof Country || $entity instanceof City);
+
+                    return $entity->name;
+                }, $entities);
+
+                return null;
+            });
+
+        $this->_unitOfWork->commit();
+
+        self::assertSame([
+            ['extraX', 'extraY'],
+            ['extraA', 'extraB', 'extraC'],
+        ], $updateGroups);
     }
 }
 
