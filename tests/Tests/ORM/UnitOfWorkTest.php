@@ -24,6 +24,7 @@ use Doctrine\ORM\Mapping\OneToMany;
 use Doctrine\ORM\Mapping\Version;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\ORMInvalidArgumentException;
+use Doctrine\ORM\Persisters\Entity\BasicEntityPersister;
 use Doctrine\ORM\UnitOfWork;
 use Doctrine\Persistence\Event\LifecycleEventArgs;
 use Doctrine\Persistence\NotifyPropertyChanged;
@@ -45,6 +46,7 @@ use Exception;
 use PHPUnit\Framework\MockObject\MockObject;
 use stdClass;
 
+use function array_map;
 use function assert;
 use function count;
 use function gc_collect_cycles;
@@ -1008,6 +1010,177 @@ class UnitOfWorkTest extends OrmTestCase
             self::assertNotNull($e->getPrevious());
             self::assertSame('Commit failed', $e->getPrevious()->getMessage());
         }
+    }
+
+    /** @group #8260 */
+    public function testInsertGrouping(): void
+    {
+        $persisterMock = $this->getMockBuilder(BasicEntityPersister::class)
+            ->setConstructorArgs([$this->_emMock, $this->_emMock->getClassMetadata(ForumUser::class)])
+            ->getMock();
+        $this->_unitOfWork->setEntityPersister(Country::class, $persisterMock);
+        $this->_unitOfWork->setEntityPersister(City::class, $persisterMock);
+
+        $queuedInserts = [];
+        $insertGroups  = [];
+
+        $persisterMock->expects(self::any())
+            ->method('addInsert')
+            ->willReturnCallback(static function ($entity) use (&$queuedInserts) {
+                assert($entity instanceof Country || $entity instanceof City);
+
+                $queuedInserts[] = $entity->name;
+
+                return null;
+            });
+
+        $persisterMock->expects(self::any())
+            ->method('executeInserts')
+            ->willReturnCallback(static function () use (&$queuedInserts, &$insertGroups) {
+                $insertGroups[] = $queuedInserts;
+                $queuedInserts  = [];
+
+                return null;
+            });
+
+        $countryX = new Country(1, 'X');
+        $this->_unitOfWork->persist($countryX);
+
+        $cityA          = new City(1, 'A');
+        $cityA->country = $countryX;
+        $this->_unitOfWork->persist($cityA);
+
+        $cityB          = new City(2, 'B');
+        $cityB->country = $countryX;
+        $this->_unitOfWork->persist($cityB);
+
+        $countryY = new Country(2, 'Y');
+        $this->_unitOfWork->persist($countryY);
+
+        $cityC          = new City(3, 'C');
+        $cityC->country = $countryY;
+        $this->_unitOfWork->persist($cityC);
+
+        $this->_unitOfWork->commit();
+
+        self::assertSame([], $queuedInserts);
+        self::assertSame([
+            ['X', 'Y'],
+            ['A', 'B', 'C'],
+        ], $insertGroups);
+    }
+
+    /** @group #8260 */
+    public function testUpdateGrouping(): void
+    {
+        $persisterMock = $this->getMockBuilder(BasicEntityPersister::class)
+            ->setConstructorArgs([$this->_emMock, $this->_emMock->getClassMetadata(ForumUser::class)])
+            ->getMock();
+        $this->_unitOfWork->setEntityPersister(Country::class, $persisterMock);
+        $this->_unitOfWork->setEntityPersister(City::class, $persisterMock);
+
+        $updateGroups = [];
+
+        $persisterMock->expects(self::any())
+            ->method('updateMulti')
+            ->willReturnCallback(static function ($entities) use (&$updateGroups) {
+                $updateGroups[] = array_map(static function ($entity) {
+                    assert($entity instanceof Country || $entity instanceof City);
+
+                    return $entity->name;
+                }, $entities);
+
+                return null;
+            });
+
+        $countryX = new Country(1, 'X');
+        $this->_unitOfWork->persist($countryX);
+
+        $cityA          = new City(1, 'A');
+        $cityA->country = $countryX;
+        $this->_unitOfWork->persist($cityA);
+
+        $cityB          = new City(2, 'B');
+        $cityB->country = $countryX;
+        $this->_unitOfWork->persist($cityB);
+
+        $countryY = new Country(2, 'Y');
+        $this->_unitOfWork->persist($countryY);
+
+        $cityC          = new City(3, 'C');
+        $cityC->country = $countryY;
+        $this->_unitOfWork->persist($cityC);
+
+        $this->_unitOfWork->commit();
+
+        $countryX->name = 'x';
+        $countryY->name = 'y';
+        $cityA->name    = 'a';
+        $cityB->name    = 'b';
+        $cityC->name    = 'c';
+
+        $this->_unitOfWork->commit();
+
+        self::assertSame([
+            ['x', 'y'],
+            ['a', 'b', 'c'],
+        ], $updateGroups);
+    }
+
+    /** @group #8260 */
+    public function testDeleteGrouping(): void
+    {
+        $persisterMock = $this->getMockBuilder(BasicEntityPersister::class)
+            ->setConstructorArgs([$this->_emMock, $this->_emMock->getClassMetadata(ForumUser::class)])
+            ->getMock();
+        $this->_unitOfWork->setEntityPersister(Country::class, $persisterMock);
+        $this->_unitOfWork->setEntityPersister(City::class, $persisterMock);
+
+        $deleteGroups = [];
+
+        $persisterMock->expects(self::any())
+            ->method('deleteMulti')
+            ->willReturnCallback(static function ($entities) use (&$deleteGroups) {
+                $deleteGroups[] = array_map(static function ($entity) {
+                    assert($entity instanceof Country || $entity instanceof City);
+
+                    return $entity->name;
+                }, $entities);
+
+                return true;
+            });
+
+        $countryX = new Country(1, 'X');
+        $this->_unitOfWork->persist($countryX);
+
+        $cityA          = new City(1, 'A');
+        $cityA->country = $countryX;
+        $this->_unitOfWork->persist($cityA);
+
+        $cityB          = new City(2, 'B');
+        $cityB->country = $countryX;
+        $this->_unitOfWork->persist($cityB);
+
+        $countryY = new Country(2, 'Y');
+        $this->_unitOfWork->persist($countryY);
+
+        $cityC          = new City(3, 'C');
+        $cityC->country = $countryY;
+        $this->_unitOfWork->persist($cityC);
+
+        $this->_unitOfWork->commit();
+
+        $this->_unitOfWork->remove($countryX);
+        $this->_unitOfWork->remove($countryY);
+        $this->_unitOfWork->remove($cityA);
+        $this->_unitOfWork->remove($cityB);
+        $this->_unitOfWork->remove($cityC);
+        $this->_unitOfWork->commit();
+
+        self::assertSame([
+            ['A', 'B', 'C'],
+            ['X', 'Y'],
+        ], $deleteGroups);
     }
 }
 

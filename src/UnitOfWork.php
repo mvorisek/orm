@@ -1180,9 +1180,108 @@ class UnitOfWork implements PropertyChangedListener
      *
      * @return list<non-empty-list<object>>
      */
+    private function groupConsecutiveByPersister(array $entities): array
+    {
+        $result = [];
+
+        $groupClassName = null;
+        $groupEntities  = [];
+
+        foreach ($entities as $entity) {
+            $class     = $this->em->getClassMetadata(get_class($entity));
+            $className = $class->name;
+
+            if ($groupClassName !== $className) {
+                if ($groupEntities !== []) {
+                    $result[]      = $groupEntities;
+                    $groupEntities = [];
+                }
+
+                $groupClassName = $className;
+            }
+
+            $groupEntities[] = $entity;
+        }
+
+        if ($groupEntities !== []) {
+            $result[] = $groupEntities;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Split group of entities so there no direct association between them.
+     *
+     * @param list<object> $entities
+     *
+     * @return list<non-empty-list<object>>
+     */
+    private function groupSplitByAnyAssociation(array $entities): array
+    {
+        $result = [];
+
+        $sort          = new TopologicalSort();
+        $sort2         = new TopologicalSort();
+        $groupEntities = [];
+
+        foreach ($entities as $entity) {
+            $sort->addNode($entity);
+
+            $targetEntities = [];
+
+            $class = $this->em->getClassMetadata(get_class($entity));
+
+            foreach ($class->associationMappings as $assoc) {
+                $targetEntity = $class->getFieldValue($entity, $assoc['fieldName']);
+
+                if ($targetEntity !== null) {
+                    $sort2->addNode($targetEntity);
+                    $targetEntities[] = $targetEntity;
+
+                    if ($sort->hasNode($targetEntity) || $sort2->hasNode($entity)) {
+                        if ($groupEntities !== []) {
+                            $result[]      = $groupEntities;
+                            $sort          = new TopologicalSort();
+                            $sort2         = new TopologicalSort();
+                            $groupEntities = [];
+
+                            $sort->addNode($entity);
+
+                            foreach ($targetEntities as $targetEntity) {
+                                $sort2->addNode($targetEntity);
+                            }
+                        }
+                    }
+                }
+            }
+
+            $groupEntities[] = $entity;
+        }
+
+        if ($groupEntities !== []) {
+            $result[] = $groupEntities;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param list<object> $entities
+     *
+     * @return list<non-empty-list<object>>
+     */
     private function groupConsecutiveByPersisterAndAnyAssociation(array $entities): array
     {
-        return array_chunk($entities, 1);
+        $result = [];
+
+        foreach ($this->groupConsecutiveByPersister($entities) as $entitiesGroupByPersister) {
+            foreach ($this->groupSplitByAnyAssociation($entitiesGroupByPersister) as $entitiesGroup) {
+                $result[] = $entitiesGroup;
+            }
+        }
+
+        return $result;
     }
 
     /**
