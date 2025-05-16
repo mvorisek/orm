@@ -1336,6 +1336,14 @@ class UnitOfWork implements PropertyChangedListener
     }
 
     /** @return list<object> */
+    private function sortForGroupingByEntityPersister(TopologicalSort $sort): array
+    {
+        return $sort->sortForGrouping(function ($entity) {
+            return $this->em->getClassMetadata(get_class($entity))->name;
+        });
+    }
+
+    /** @return list<object> */
     private function computeInsertExecutionOrder(): array
     {
         $sort = new TopologicalSort();
@@ -1391,7 +1399,7 @@ class UnitOfWork implements PropertyChangedListener
             }
         }
 
-        return $sort->sort();
+        return $this->sortForGroupingByEntityPersister($sort);
     }
 
     /** @return list<object> */
@@ -1507,7 +1515,7 @@ class UnitOfWork implements PropertyChangedListener
             }
         }
 
-        return $sort->sort();
+        return $this->sortForGroupingByEntityPersister($sort);
     }
 
     /**
