@@ -431,6 +431,18 @@ class BasicEntityPersister implements EntityPersister
     }
 
     /**
+     * @param non-empty-list<object> $entities The entities to update.
+     *
+     * @return void
+     */
+    public function updateMulti(array $entities)
+    {
+        foreach ($entities as $entity) {
+            $this->update($entity);
+        }
+    }
+
+    /**
      * Performs an UPDATE statement for an entity on a specific table.
      * The UPDATE can optionally be versioned, which requires the entity to have a version field.
      *
@@ -612,6 +624,22 @@ class BasicEntityPersister implements EntityPersister
         $this->deleteJoinTableRecords($identifier, $types);
 
         return (bool) $this->conn->delete($tableName, $id, $types);
+    }
+
+    /**
+     * @param non-empty-list<object> $entities The entities to delete.
+     *
+     * @return int Number of entities that got deleted from the database.
+     */
+    public function deleteMulti(array $entities)
+    {
+        $deletedRows = 0;
+
+        foreach ($entities as $entity) {
+            $deletedRows += $this->delete($entity);
+        }
+
+        return $deletedRows;
     }
 
     /**

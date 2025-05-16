@@ -48,6 +48,7 @@ use Doctrine\Persistence\ObjectManagerAware;
 use Doctrine\Persistence\PropertyChangedListener;
 use Exception;
 use InvalidArgumentException;
+use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\VarExporter\Hydrator;
 use UnexpectedValueException;
@@ -610,9 +611,10 @@ class UnitOfWork implements PropertyChangedListener
     {
         foreach ($this->extraUpdates as $oid => $update) {
             [$entity, $changeset] = $update;
+            $persister            = $this->getEntityPersister(get_class($entity));
 
             $this->entityChangeSets[$oid] = $changeset;
-            $this->getEntityPersister(get_class($entity))->update($entity);
+            $this->persisterUpdateMulti($persister, [$entity]);
         }
 
         $this->extraUpdates = [];
@@ -1258,6 +1260,44 @@ class UnitOfWork implements PropertyChangedListener
     }
 
     /**
+     * @internal This method will be removed once EntityPersister::updateMulti() method is implemented.
+     *
+     * @param list<object> $entities The entities to update.
+     */
+    private function persisterUpdateMulti(EntityPersister $persister, array $entities): void
+    {
+        // EntityPersister::update() and EntityPersister::updateMulti() methods must be not overriden or always overriden at the same time
+        if ($persister instanceof BasicEntityPersister && (new ReflectionMethod($persister, 'update'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'updateMulti'))->getDeclaringClass()->getName()) {
+            if ($entities !== []) {
+                $persister->updateMulti($entities);
+            }
+        } else {
+            foreach ($entities as $entity) {
+                $persister->update($entity);
+            }
+        }
+    }
+
+    /**
+     * @internal This method will be removed once EntityPersister::deleteMulti() method is implemented.
+     *
+     * @param list<object> $entities The entities to delete.
+     */
+    private function persisterDeleteMulti(EntityPersister $persister, array $entities): void
+    {
+        // EntityPersister::delete() and EntityPersister::deleteMulti() methods must be not overriden or always overriden at the same time
+        if ($persister instanceof BasicEntityPersister && (new ReflectionMethod($persister, 'delete'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'deleteMulti'))->getDeclaringClass()->getName()) {
+            if ($entities !== []) {
+                $persister->deleteMulti($entities);
+            }
+        } else {
+            foreach ($entities as $entity) {
+                $persister->delete($entity);
+            }
+        }
+    }
+
+    /**
      * Executes all entity updates
      */
     private function executeUpdates(): void
@@ -1275,7 +1315,7 @@ class UnitOfWork implements PropertyChangedListener
             }
 
             if (! empty($this->entityChangeSets[$oid])) {
-                $persister->update($entity);
+                $this->persisterUpdateMulti($persister, [$entity]);
             }
 
             unset($this->entityUpdates[$oid]);
@@ -1302,7 +1342,7 @@ class UnitOfWork implements PropertyChangedListener
             $persister = $this->getEntityPersister($class->name);
             $invoke    = $this->listenersInvoker->getSubscribedSystems($class, Events::postRemove);
 
-            $persister->delete($entity);
+            $this->persisterDeleteMulti($persister, [$entity]);
 
             unset(
                 $this->entityDeletions[$oid],
