@@ -1176,14 +1176,14 @@ class UnitOfWork implements PropertyChangedListener
         $entities         = $this->computeInsertExecutionOrder();
         $eventsToDispatch = [];
 
-        foreach ($entities as $entity) {
-            $oid       = spl_object_id($entity);
-            $class     = $this->em->getClassMetadata(get_class($entity));
+            foreach ($entities as $entity) {
+                $oid       = spl_object_id($entity);
+                $class     = $this->em->getClassMetadata(get_class($entity));
             $persister = $this->getEntityPersister($class->name);
 
-            $persister->addInsert($entity);
+                $persister->addInsert($entity);
 
-            unset($this->entityInsertions[$oid]);
+                unset($this->entityInsertions[$oid]);
 
             $postInsertIds = $persister->executeInserts();
 
@@ -1200,18 +1200,18 @@ class UnitOfWork implements PropertyChangedListener
                 }
             }
 
-            if (! isset($this->entityIdentifiers[$oid])) {
-                //entity was not added to identity map because some identifiers are foreign keys to new entities.
-                //add it now
-                $this->addToEntityIdentifiersAndEntityMap($class, $oid, $entity);
-            }
+                if (! isset($this->entityIdentifiers[$oid])) {
+                    //entity was not added to identity map because some identifiers are foreign keys to new entities.
+                    //add it now
+                    $this->addToEntityIdentifiersAndEntityMap($class, $oid, $entity);
+                }
 
-            $invoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postPersist);
+                $invoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postPersist);
 
-            if ($invoke !== ListenersInvoker::INVOKE_NONE) {
-                $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
+                if ($invoke !== ListenersInvoker::INVOKE_NONE) {
+                    $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
+                }
             }
-        }
 
         // Defer dispatching `postPersist` events to until all entities have been inserted and post-insert
         // IDs have been assigned.
@@ -1302,28 +1302,28 @@ class UnitOfWork implements PropertyChangedListener
      */
     private function executeUpdates(): void
     {
-        foreach ($this->entityUpdates as $oid => $entity) {
-            $class            = $this->em->getClassMetadata(get_class($entity));
+            foreach ($this->entityUpdates as $oid => $entity) {
+                $class            = $this->em->getClassMetadata(get_class($entity));
             $persister        = $this->getEntityPersister($class->name);
-            $preUpdateInvoke  = $this->listenersInvoker->getSubscribedSystems($class, Events::preUpdate);
-            $postUpdateInvoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postUpdate);
+                $preUpdateInvoke  = $this->listenersInvoker->getSubscribedSystems($class, Events::preUpdate);
+                $postUpdateInvoke = $this->listenersInvoker->getSubscribedSystems($class, Events::postUpdate);
 
-            if ($preUpdateInvoke !== ListenersInvoker::INVOKE_NONE) {
-                $this->listenersInvoker->invoke($class, Events::preUpdate, $entity, new PreUpdateEventArgs($entity, $this->em, $this->getEntityChangeSet($entity)), $preUpdateInvoke);
+                if ($preUpdateInvoke !== ListenersInvoker::INVOKE_NONE) {
+                    $this->listenersInvoker->invoke($class, Events::preUpdate, $entity, new PreUpdateEventArgs($entity, $this->em, $this->getEntityChangeSet($entity)), $preUpdateInvoke);
 
-                $this->recomputeSingleEntityChangeSet($class, $entity);
-            }
+                    $this->recomputeSingleEntityChangeSet($class, $entity);
+                }
 
             if (! empty($this->entityChangeSets[$oid])) {
                 $this->persisterUpdateMulti($persister, [$entity]);
             }
 
-            unset($this->entityUpdates[$oid]);
+                unset($this->entityUpdates[$oid]);
 
-            if ($postUpdateInvoke !== ListenersInvoker::INVOKE_NONE) {
-                $this->listenersInvoker->invoke($class, Events::postUpdate, $entity, new PostUpdateEventArgs($entity, $this->em), $postUpdateInvoke);
+                if ($postUpdateInvoke !== ListenersInvoker::INVOKE_NONE) {
+                    $this->listenersInvoker->invoke($class, Events::postUpdate, $entity, new PostUpdateEventArgs($entity, $this->em), $postUpdateInvoke);
+                }
             }
-        }
     }
 
     /**
@@ -1334,34 +1334,34 @@ class UnitOfWork implements PropertyChangedListener
         $entities         = $this->computeDeleteExecutionOrder();
         $eventsToDispatch = [];
 
-        foreach ($entities as $entity) {
-            $this->removeFromIdentityMap($entity);
+            foreach ($entities as $entity) {
+                $this->removeFromIdentityMap($entity);
 
-            $oid       = spl_object_id($entity);
-            $class     = $this->em->getClassMetadata(get_class($entity));
-            $persister = $this->getEntityPersister($class->name);
-            $invoke    = $this->listenersInvoker->getSubscribedSystems($class, Events::postRemove);
+                $oid       = spl_object_id($entity);
+                $class     = $this->em->getClassMetadata(get_class($entity));
+                $persister = $this->getEntityPersister($class->name);
+                $invoke    = $this->listenersInvoker->getSubscribedSystems($class, Events::postRemove);
 
             $this->persisterDeleteMulti($persister, [$entity]);
 
-            unset(
-                $this->entityDeletions[$oid],
-                $this->entityIdentifiers[$oid],
-                $this->originalEntityData[$oid],
-                $this->entityStates[$oid]
-            );
+                unset(
+                    $this->entityDeletions[$oid],
+                    $this->entityIdentifiers[$oid],
+                    $this->originalEntityData[$oid],
+                    $this->entityStates[$oid]
+                );
 
-            // Entity with this $oid after deletion treated as NEW, even if the $oid
-            // is obtained by a new entity because the old one went out of scope.
-            //$this->entityStates[$oid] = self::STATE_NEW;
-            if (! $class->isIdentifierNatural()) {
-                $class->reflFields[$class->identifier[0]]->setValue($entity, null);
-            }
+                // Entity with this $oid after deletion treated as NEW, even if the $oid
+                // is obtained by a new entity because the old one went out of scope.
+                //$this->entityStates[$oid] = self::STATE_NEW;
+                if (! $class->isIdentifierNatural()) {
+                    $class->reflFields[$class->identifier[0]]->setValue($entity, null);
+                }
 
-            if ($invoke !== ListenersInvoker::INVOKE_NONE) {
-                $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
+                if ($invoke !== ListenersInvoker::INVOKE_NONE) {
+                    $eventsToDispatch[] = ['class' => $class, 'entity' => $entity, 'invoke' => $invoke];
+                }
             }
-        }
 
         // Defer dispatching `postRemove` events to until all entities have been removed.
         foreach ($eventsToDispatch as $event) {
