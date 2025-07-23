@@ -148,7 +148,7 @@ class SecondLevelCacheCountQueriesTest extends SecondLevelCacheFunctionalTestCas
         $this->_em->persist($c2);
         $this->_em->flush();
 
-        self::assertQueryCountByType('UPDATE', $cacheUsage === 0 ? 1 : 2);
+        self::assertQueryCountByType('UPDATE', 1);
     }
 
     public static function cacheUsageProvider(): array

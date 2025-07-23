@@ -118,9 +118,18 @@ class NonStrictReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function updateMulti(array $entities)
     {
-        $this->persister->update($entity);
+        // EntityPersister::update() and EntityPersister::updateMulti() methods must be not overriden or always overriden at the same time
+        if ($this->persister instanceof BasicEntityPersister && (new ReflectionMethod($this->persister, 'update'))->getDeclaringClass()->getName() === (new ReflectionMethod($this->persister, 'updateMulti'))->getDeclaringClass()->getName()) {
+            $this->persister->updateMulti($entities);
+        } else {
+            foreach ($entities as $entity) {
+                $this->persister->update($entity);
+            }
+        }
 
-        $this->queuedCache['update'][] = $entity;
+        foreach ($entities as $entity) {
+            $this->queuedCache['update'][] = $entity;
+        }
     }
 
     /** @param object $entity */

@@ -143,18 +143,30 @@ class ReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function updateMulti(array $entities)
     {
-        $key  = new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
-        $lock = $this->region->lock($key);
+        $keys  = array_map(function ($entity) {
+            return new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
+        }, $entities);
+        $locks = array_map(function ($key) {
+            return $this->region->lock($key);
+        }, $keys);
 
-        $this->persister->update($entity);
-
-        if ($lock === null) {
-            return;
+        // EntityPersister::update() and EntityPersister::updateMulti() methods must be not overriden or always overriden at the same time
+        if ($this->persister instanceof BasicEntityPersister && (new ReflectionMethod($this->persister, 'update'))->getDeclaringClass()->getName() === (new ReflectionMethod($this->persister, 'updateMulti'))->getDeclaringClass()->getName()) {
+            $this->persister->updateMulti($entities);
+        } else {
+            foreach ($entities as $entity) {
+                $this->persister->update($entity);
+            }
         }
 
-        $this->queuedCache['update'][] = [
-            'lock'   => $lock,
-            'key'    => $key,
-        ];
+        foreach ($keys as $k => $key) {
+            $lock = $locks[$k];
+            if ($lock !== null) {
+                $this->queuedCache['update'][] = [
+                    'lock'   => $lock,
+                    'key'    => $key,
+                ];
+            }
+        }
     }
 }
