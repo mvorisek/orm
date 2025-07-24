@@ -133,6 +133,16 @@ class ReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function update($entity)
     {
+        $this->updateMulti([$entity]);
+    }
+
+    /**
+     * @param non-empty-list<object> $entities The entities to update.
+     *
+     * @return void
+     */
+    public function updateMulti(array $entities)
+    {
         $key  = new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
         $lock = $this->region->lock($key);
 

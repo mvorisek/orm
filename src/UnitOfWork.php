@@ -1394,7 +1394,7 @@ class UnitOfWork implements PropertyChangedListener
     private function persisterUpdateMulti(EntityPersister $persister, array $entities): void
     {
         // EntityPersister::update() and EntityPersister::updateMulti() methods must be not overriden or always overriden at the same time
-        if ($persister instanceof BasicEntityPersister && (new ReflectionMethod($persister, 'update'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'updateMulti'))->getDeclaringClass()->getName()) {
+        if (($persister instanceof BasicEntityPersister || $persister instanceof NonStrictReadWriteCachedEntityPersister || $persister instanceof ReadWriteCachedEntityPersister) && (new ReflectionMethod($persister, 'update'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'updateMulti'))->getDeclaringClass()->getName()) {
             if ($entities !== []) {
                 $persister->updateMulti($entities);
             }

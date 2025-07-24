@@ -108,6 +108,16 @@ class NonStrictReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function update($entity)
     {
+        $this->updateMulti([$entity]);
+    }
+
+    /**
+     * @param non-empty-list<object> $entities The entities to update.
+     *
+     * @return void
+     */
+    public function updateMulti(array $entities)
+    {
         $this->persister->update($entity);
 
         $this->queuedCache['update'][] = $entity;
