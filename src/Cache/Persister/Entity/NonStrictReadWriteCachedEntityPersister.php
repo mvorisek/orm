@@ -60,6 +60,16 @@ class NonStrictReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function delete($entity)
     {
+        return $this->deleteMulti([$entity]) === 1;
+    }
+
+    /**
+     * @param non-empty-list<object> $entities The entities to delete.
+     *
+     * @return int Number of entities that got deleted from the database.
+     */
+    public function deleteMulti(array $entities)
+    {
         $key     = new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
         $deleted = $this->persister->delete($entity);
 

@@ -268,7 +268,7 @@ class ManyToManyBasicAssociationTest extends OrmFunctionalTestCase
         // for the CmsGroup -> CmsUser inverse side association (for both users at once),
         // and one for the group itself.
         $this->removeTransactionCommandsFromQueryLog();
-        self::assertQueryCount($this->isSecondLevelCacheEnabled ? 10 : 6);
+        self::assertQueryCount(6);
 
         // Changes to in-memory collection have been made and flushed
         self::assertCount(0, $user->getGroups());

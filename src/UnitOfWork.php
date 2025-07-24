@@ -13,6 +13,8 @@ use Doctrine\DBAL\Connections\PrimaryReadReplicaConnection;
 use Doctrine\DBAL\LockMode;
 use Doctrine\Deprecations\Deprecation;
 use Doctrine\ORM\Cache\Persister\CachedPersister;
+use Doctrine\ORM\Cache\Persister\Entity\NonStrictReadWriteCachedEntityPersister;
+use Doctrine\ORM\Cache\Persister\Entity\ReadWriteCachedEntityPersister;
 use Doctrine\ORM\Event\ListenersInvoker;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Event\PostFlushEventArgs;
@@ -1411,7 +1413,7 @@ class UnitOfWork implements PropertyChangedListener
     private function persisterDeleteMulti(EntityPersister $persister, array $entities): void
     {
         // EntityPersister::delete() and EntityPersister::deleteMulti() methods must be not overriden or always overriden at the same time
-        if ($persister instanceof BasicEntityPersister && (new ReflectionMethod($persister, 'delete'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'deleteMulti'))->getDeclaringClass()->getName()) {
+        if (($persister instanceof BasicEntityPersister || $persister instanceof NonStrictReadWriteCachedEntityPersister || $persister instanceof ReadWriteCachedEntityPersister) && (new ReflectionMethod($persister, 'delete'))->getDeclaringClass()->getName() === (new ReflectionMethod($persister, 'deleteMulti'))->getDeclaringClass()->getName()) {
             if ($entities !== []) {
                 $persister->deleteMulti($entities);
             }

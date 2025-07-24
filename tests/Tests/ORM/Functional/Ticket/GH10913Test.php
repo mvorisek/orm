@@ -42,7 +42,7 @@ class GH10913Test extends OrmFunctionalTestCase
         $this->_em->remove($b);
         $this->_em->remove($c);
 
-        $this->flushAndAssertNumberOfDeletes(3, $this->isSecondLevelCacheEnabled ? 3 : 2);
+        $this->flushAndAssertNumberOfDeletes(3, 2);
     }
 
     public function testExample2(): void
@@ -108,7 +108,7 @@ class GH10913Test extends OrmFunctionalTestCase
         $this->_em->remove($d);
         $this->_em->remove($a);
 
-        $this->flushAndAssertNumberOfDeletes(4, $this->isSecondLevelCacheEnabled ? 4 : 3);
+        $this->flushAndAssertNumberOfDeletes(4, 3);
     }
 
     private function flushAndAssertNumberOfDeletes(int $expectedRowsCount, int $expectedQueriesCount): void
