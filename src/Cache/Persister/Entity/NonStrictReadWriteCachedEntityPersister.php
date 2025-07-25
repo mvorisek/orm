@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace Doctrine\ORM\Cache\Persister\Entity;
 
 use Doctrine\ORM\Cache\EntityCacheKey;
+use Doctrine\ORM\Persisters\Entity\BasicEntityPersister;
+use ReflectionMethod;
 
+use function array_map;
+use function count;
 use function get_class;
 
 /**
@@ -70,16 +74,33 @@ class NonStrictReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function deleteMulti(array $entities)
     {
-        $key     = new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
-        $deleted = $this->persister->delete($entity);
+        $keys = array_map(function ($entity) {
+            return new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
+        }, $entities);
 
-        if ($deleted) {
-            $this->region->evict($key);
+        // EntityPersister::delete() and EntityPersister::deleteMulti() methods must be not overriden or always overriden at the same time
+        if ($this->persister instanceof BasicEntityPersister && (new ReflectionMethod($this->persister, 'delete'))->getDeclaringClass()->getName() === (new ReflectionMethod($this->persister, 'deleteMulti'))->getDeclaringClass()->getName()) {
+            $deletedCount = $this->persister->deleteMulti($entities);
+        } else {
+            $deletedCount = 0;
+            foreach ($entities as $entity) {
+                if ($this->persister->delete($entity)) {
+                    ++$deletedCount;
+                }
+            }
         }
 
-        $this->queuedCache['delete'][] = $key;
+        if ($deletedCount === count($entities)) {
+            foreach ($keys as $key) {
+                $this->region->evict($key);
+            }
+        }
 
-        return $deleted;
+        foreach ($keys as $key) {
+            $this->queuedCache['delete'][] = $key;
+        }
+
+        return $deletedCount;
     }
 
     /**

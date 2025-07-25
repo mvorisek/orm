@@ -8,7 +8,12 @@ use Doctrine\ORM\Cache\ConcurrentRegion;
 use Doctrine\ORM\Cache\EntityCacheKey;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Persisters\Entity\BasicEntityPersister;
 use Doctrine\ORM\Persisters\Entity\EntityPersister;
+use ReflectionMethod;
+
+use function array_map;
+use function count;
 
 /**
  * Specific read-write entity persister
@@ -85,24 +90,42 @@ class ReadWriteCachedEntityPersister extends AbstractEntityPersister
      */
     public function deleteMulti(array $entities)
     {
-        $key     = new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
-        $lock    = $this->region->lock($key);
-        $deleted = $this->persister->delete($entity);
+        $keys  = array_map(function ($entity) {
+            return new EntityCacheKey($this->class->rootEntityName, $this->uow->getEntityIdentifier($entity));
+        }, $entities);
+        $locks = array_map(function ($key) {
+            return $this->region->lock($key);
+        }, $keys);
 
-        if ($deleted) {
-            $this->region->evict($key);
+        // EntityPersister::delete() and EntityPersister::deleteMulti() methods must be not overriden or always overriden at the same time
+        if ($this->persister instanceof BasicEntityPersister && (new ReflectionMethod($this->persister, 'delete'))->getDeclaringClass()->getName() === (new ReflectionMethod($this->persister, 'deleteMulti'))->getDeclaringClass()->getName()) {
+            $deletedCount = $this->persister->deleteMulti($entities);
+        } else {
+            $deletedCount = 0;
+            foreach ($entities as $entity) {
+                if ($this->persister->delete($entity)) {
+                    ++$deletedCount;
+                }
+            }
         }
 
-        if ($lock === null) {
-            return $deleted;
+        if ($deletedCount === count($entities)) {
+            foreach ($keys as $key) {
+                $this->region->evict($key);
+            }
         }
 
-        $this->queuedCache['delete'][] = [
-            'lock'   => $lock,
-            'key'    => $key,
-        ];
+        foreach ($keys as $k => $key) {
+            $lock = $locks[$k];
+            if ($lock !== null) {
+                $this->queuedCache['delete'][] = [
+                    'lock'   => $lock,
+                    'key'    => $key,
+                ];
+            }
+        }
 
-        return $deleted;
+        return $deletedCount;
     }
 
     /**
